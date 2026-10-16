@@ -14,8 +14,8 @@ last four digits.
 ## Install
 
 ```
-pip install "mgh-efax @ git+https://github.com/Milligram-Health/mgh-efax@v0.1.0"          # client only
-pip install "mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.1.0"  # + Django app
+pip install "mgh-efax @ git+https://github.com/Milligram-Health/mgh-efax@v0.2.0"          # client only
+pip install "mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.2.0"  # + Django app
 ```
 
 The repo is public, so installing needs no credentials. The client has no runtime dependencies (stdlib `urllib`), so it doesn't disturb the host app's pins. Always pin a tag.
@@ -114,6 +114,15 @@ def mark_sent(sender, fax, **kw): ...
 A `sending` row whose worker died is moved to `uncertain` after 10 minutes. Failures record eFax's `error_code` (E44 and so on).
 
 **Inbound states:** `received → stored → handled`, or `handler_failed`, which the sweep retries.
+
+**Test environments: never fax real recipients from dev.**
+
+| Setting | Effect |
+|---|---|
+| `SENDING_ENABLED: False` | Nothing is dialled. Rows end in `suppressed`, which is final, so re-enabling never releases a backlog. |
+| `REDIRECT_TO: "<number>"` | **Every** fax dials that number instead. The intended recipient stays in `to_number`, and `dialed_number` records what was actually dialled. A `[TEST]` cover page names the intended recipient, with the number masked. |
+
+A typical non-production setup is `REDIRECT_TO = env("EFAX_TEST_FAX_NUMBER")` and `SENDING_ENABLED = bool(REDIRECT_TO)`, with production forcing both off and on respectively. Both checks happen inside `submit()`, the only place a fax is dialled, so no code path can get around them.
 
 **PHI:** documents and images go to the `STORAGE` alias, so point it at encrypted, private storage. The admin pages are read-only.
 

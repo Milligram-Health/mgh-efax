@@ -12,6 +12,8 @@ Settings (all read from the host app; the package supplies no credentials):
         "BASE_URL": None,              # full override of the API host, if ever needed
         "STORAGE": "default",          # STORAGES alias for fax documents (PHI: use encrypted)
         "AUTO_DISPATCH": True,         # queue a Celery send on commit; False = sweep only
+        "SENDING_ENABLED": True,       # False: nothing is dialled; rows end "suppressed"
+        "REDIRECT_TO": "",             # set: EVERY fax dials this number instead (test envs)
         "POLL_INBOUND": False,         # pull /faxes/received when no webhook is configured
         "WEBHOOK_SECRET": ...,         # only apps that receive webhooks
         "WEBHOOK_SIGNATURE_HEADER": "X-HMAC-Signature",

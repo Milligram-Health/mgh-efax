@@ -44,7 +44,7 @@ If any box fails, **⛔ STOP** and report which one before going further.
 The repo is public, so the build needs no credentials. Add a pinned tag to the app's requirements:
 
 ```
-mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.1.0
+mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.2.0
 ```
 
 (Drop `celery` from the extras if the app has no Celery.) If the build can't reach GitHub at all, vendor the
@@ -86,6 +86,10 @@ EFAX = {
 CELERY_BEAT_SCHEDULE["efax-sweep"] = {"task": "mgh_efax.sweep", "schedule": 60.0}
 ```
 
+- [ ] **Non-production environments must not fax real recipients.** Set `REDIRECT_TO` to a test fax number
+  you own, and `SENDING_ENABLED` to `bool(that number)`, so a blank test number means nothing is sent. Production
+  sets `REDIRECT_TO: ""` and `SENDING_ENABLED: True` explicitly, ignoring any test number. This matters most
+  when dev and prod share an eFax account.
 - [ ] Run `manage.py migrate`. This creates the `mgh_efax_outboundfax` and `mgh_efax_inboundfax` tables. Don't
   create fax tables of your own; link to your records through `source` / `subject`.
 - [ ] Add the `EFAX_*` secrets to every environment through the app's usual secret path (not `.env` files in git).

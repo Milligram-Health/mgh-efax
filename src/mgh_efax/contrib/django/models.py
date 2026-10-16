@@ -38,6 +38,9 @@ class OutboundState(models.TextChoices):
     FAILED = "failed", "Failed"
     # POST /faxes may or may not have been accepted. Resolved by reconcile, never by resending.
     UNCERTAIN = "uncertain", "Uncertain (reconciling)"
+    # Never sent because EFAX["SENDING_ENABLED"] is off in this environment. Final: turning
+    # sending back on does not release a backlog of old faxes.
+    SUPPRESSED = "suppressed", "Not sent (sending disabled here)"
 
 
 class OutboundFax(models.Model):
@@ -69,6 +72,9 @@ class OutboundFax(models.Model):
 
     # What eFax said.
     efax_fax_id = models.CharField(max_length=64, blank=True, db_index=True)
+    # The number actually dialled. Differs from to_number only when EFAX["REDIRECT_TO"] sent
+    # it to a test number instead.
+    dialed_number = models.CharField(max_length=20, blank=True)
     provider_status = models.CharField(max_length=64, blank=True)
     error_code = models.CharField(max_length=32, blank=True)
     error = models.CharField(max_length=500, blank=True)
@@ -90,7 +96,15 @@ class OutboundFax(models.Model):
 
     @property
     def is_finished(self) -> bool:
-        return self.state in (OutboundState.DELIVERED, OutboundState.FAILED)
+        return self.state in (
+            OutboundState.DELIVERED,
+            OutboundState.FAILED,
+            OutboundState.SUPPRESSED,
+        )
+
+    @property
+    def was_redirected(self) -> bool:
+        return bool(self.dialed_number) and self.dialed_number != self.to_number
 
 
 class InboundState(models.TextChoices):

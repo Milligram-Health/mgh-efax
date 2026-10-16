@@ -15,7 +15,7 @@ from django.utils import timezone
 from ... import errors
 from ...client import EFaxClient
 from ...models import DELIVERED, FAILED, CoverPage, Destination, Document, SendRequest
-from ...numbers import mask_number
+from ...numbers import mask_number, normalize_fax_number
 from ...webhook import InboundNotification
 from . import efax_settings, get_client
 from .models import InboundFax, InboundState, OutboundFax, OutboundState
@@ -57,8 +57,14 @@ def submit(fax: OutboundFax, *, client: EFaxClient | None = None) -> OutboundFax
     fax.refresh_from_db()
     if not claimed:
         return fax
+    conf = efax_settings()
+    if not conf.get("SENDING_ENABLED", True):
+        log.info("efax sending disabled here; suppressed %s", fax.reference)
+        return _finish(fax, OutboundState.SUPPRESSED, error="sending disabled in this environment")
+    redirect_to = conf.get("REDIRECT_TO") or ""
     client = client or get_client(user_id=fax.from_user_id or None)
     try:
+        dial = normalize_fax_number(redirect_to) if redirect_to else fax.to_number
         with fax.document.open("rb") as fh:
             content = fh.read()
         cover = None
@@ -68,11 +74,19 @@ def submit(fax: OutboundFax, *, client: EFaxClient | None = None) -> OutboundFax
                 subject=fax.cover_subject or None,
                 message=fax.cover_message or None,
             )
+        if redirect_to:
+            # Always a cover page on a redirected fax, so whoever picks it up knows it's a test.
+            intended = " ".join(x for x in (fax.to_name, mask_number(fax.to_number)) if x)
+            cover = CoverPage(
+                from_name=fax.cover_from or None,
+                subject=f"[TEST] {fax.cover_subject}".strip(),
+                message=f"TEST FAX, redirected. Intended for: {intended}."
+                + (f"\n\n{fax.cover_message}" if fax.cover_message else ""),
+            )
+        fax.dialed_number = dial
         ref = client.send_fax(
             SendRequest(
-                destinations=[
-                    Destination(fax.to_number, fax.to_name or None, fax.to_company or None)
-                ],
+                destinations=[Destination(dial, fax.to_name or None, fax.to_company or None)],
                 documents=[Document(content)],
                 client_reference_id=str(fax.reference),
                 cover_page=cover,
@@ -92,7 +106,11 @@ def submit(fax: OutboundFax, *, client: EFaxClient | None = None) -> OutboundFax
     fax.submitted_at = timezone.now()
     _set(fax, OutboundState.SUBMITTED, error="")
     log.info(
-        "efax submitted %s fax_id=%s to=%s", fax.reference, ref.fax_id, mask_number(fax.to_number)
+        "efax submitted %s fax_id=%s to=%s%s",
+        fax.reference,
+        ref.fax_id,
+        mask_number(dial),
+        " (redirected test fax)" if redirect_to else "",
     )
     return fax
 

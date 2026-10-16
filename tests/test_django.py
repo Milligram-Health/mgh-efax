@@ -234,3 +234,44 @@ def test_sweep_command_runs_with_nothing_to_do():
     out = io.StringIO()
     call_command("efax_sweep", stdout=out)
     assert "submitted=0" in out.getvalue()
+
+
+def test_sending_disabled_suppresses_without_calling_efax(efax_settings, connect):
+    finished = []
+    connect(outbound_fax_finished, lambda sender, fax, **kw: finished.append(fax.state))
+    efax_settings.EFAX = {**efax_settings.EFAX, "SENDING_ENABLED": False}
+    t = FakeTransport()
+    fax = submit(_queue(), client=make_client(t))
+    assert fax.state == OutboundState.SUPPRESSED and fax.is_finished
+    assert t.calls == []  # not even a token request
+    assert finished == [OutboundState.SUPPRESSED]
+    efax_settings.EFAX = {**efax_settings.EFAX, "SENDING_ENABLED": True}
+    assert submit(fax, client=make_client(t)).state == OutboundState.SUPPRESSED  # final
+
+
+def test_redirect_dials_test_number_and_marks_the_cover(efax_settings):
+    efax_settings.EFAX = {**efax_settings.EFAX, "REDIRECT_TO": "+1 716 985 9039"}
+    fax = _queue(to_name="Main St", cover_subject="Intervention", cover_message="See attached")
+    t = FakeTransport().on("POST", "/faxes", ACCEPTED)
+    fax = submit(fax, client=make_client(t))
+    body = json.loads(t.calls[-1][3])
+    assert body["destinations"][0]["fax_number"] == "17169859039"
+    cover = body["fax_options"]["cover_page_options"]
+    assert cover["subject"] == "[TEST] Intervention"
+    assert "Main St *******0142" in cover["message"] and cover["message"].endswith("See attached")
+    assert (fax.to_number, fax.dialed_number) == ("16125550142", "17169859039")
+    assert fax.was_redirected and fax.state == OutboundState.SUBMITTED
+
+
+def test_no_redirect_dials_the_real_number():
+    t = FakeTransport().on("POST", "/faxes", ACCEPTED)
+    fax = submit(_queue(), client=make_client(t))
+    assert json.loads(t.calls[-1][3])["destinations"][0]["fax_number"] == "16125550142"
+    assert fax.dialed_number == "16125550142" and not fax.was_redirected
+
+
+def test_invalid_redirect_number_fails_closed(efax_settings):
+    efax_settings.EFAX = {**efax_settings.EFAX, "REDIRECT_TO": "555"}
+    t = FakeTransport()
+    fax = submit(_queue(), client=make_client(t))
+    assert fax.state == OutboundState.FAILED and t.paths().count("POST /faxes") == 0
