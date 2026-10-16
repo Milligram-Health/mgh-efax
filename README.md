@@ -14,8 +14,8 @@ last four digits.
 ## Install
 
 ```
-pip install "mgh-efax @ git+https://github.com/Milligram-Health/mgh-efax@v0.2.0"          # client only
-pip install "mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.2.0"  # + Django app
+pip install "mgh-efax @ git+https://github.com/Milligram-Health/mgh-efax@v0.3.0"          # client only
+pip install "mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.3.0"  # + Django app
 ```
 
 The repo is public, so installing needs no credentials. The client has no runtime dependencies (stdlib `urllib`), so it doesn't disturb the host app's pins. Always pin a tag.
@@ -125,6 +125,46 @@ A `sending` row whose worker died is moved to `uncertain` after 10 minutes. Fail
 A typical non-production setup is `REDIRECT_TO = env("EFAX_TEST_FAX_NUMBER")` and `SENDING_ENABLED = bool(REDIRECT_TO)`, with production forcing both off and on respectively. Both checks happen inside `submit()`, the only place a fax is dialled, so no code path can get around them.
 
 **PHI:** documents and images go to the `STORAGE` alias, so point it at encrypted, private storage. The admin pages are read-only.
+
+## One account per tenant (optional)
+
+An app that hosts several organisations can give each one its **own** eFax account, with its own App ID, API key,
+numbers and, if eFax issues them per account, webhook secret. eFax supports this with sub-groups: each group gets
+an App ID and key scoped to that group's numbers only. Two optional hooks let the app supply the account per row.
+With neither hook set, behaviour is exactly as before.
+
+```python
+EFAX = {
+    "ACCOUNT_RESOLVER": "myapp.fax.resolve_account",        # (row, purpose) -> EFaxClient | None
+    "WEBHOOK_SECRET_RESOLVER": "myapp.fax.webhook_secret",   # (payload) -> str; only for per-account secrets
+    "REGION": "us", "STORAGE": "fax",                         # APP_ID / API_KEY / USER_ID not needed
+}
+
+send_fax(to=..., document=pdf, source=referral, account_key=str(org.pk))   # which account sends it
+```
+
+**`ACCOUNT_RESOLVER(row, purpose)`** returns the `EFaxClient` for that row's account, or `None`.
+- **`row`:** an `OutboundFax`, which carries the app's opaque `account_key`, or an `InboundFax`, which carries the `app_id` the fax arrived on.
+- **`purpose`:** `"send"`, `"track"` (polling / reconciling) or `"inbound"` (downloading a received fax).
+- **What `None` means:**
+  - **send:** the row ends `suppressed`, which is final and fires `outbound_fax_finished`. This is where a tenant-level "fax off" switch belongs; it holds faxes that were already queued. `SENDING_ENABLED: False` is still checked first.
+  - **track:** the row is left as it is and retried next sweep. It is never resent.
+  - **inbound:** the attempt is counted and the fax stays in the retry path, so a misconfigured tenant never loses a received fax.
+- **If the resolver raises:** an outbound row goes back to `queued`. Only the exception's type is recorded, never its message, which could contain credentials.
+- **Caching:** the sweep resolves every row separately. Have the resolver cache one client per account (for example in a dict keyed by account), so eFax tokens are reused.
+- **Polling:** `POLL_INBOUND` can't be used with a resolver, because there is no list of accounts to poll; receive through the webhook. Setting both raises `ImproperlyConfigured`.
+
+**`WEBHOOK_SECRET_RESOLVER(payload)`** returns the secret for the account that sent the notification, usually looked up from `payload["app_id"]`.
+- The body is parsed only to choose the secret, and nothing in it is acted on until the HMAC over the raw body verifies with that secret.
+- An unparseable body, an unknown account or an empty secret all get a 403.
+- If eFax gives every group the same secret, skip this hook and set `WEBHOOK_SECRET` as usual.
+
+**Storing per-tenant credentials in the app's database** is reasonable when:
+- the API key and webhook secret are encrypted field by field with the app's existing encryption;
+- they're write-only: never returned by an API, logged or shown back;
+- only staff can set or rotate them, and every change is audit-logged.
+
+A sub-group key only reaches that group's numbers, which limits the damage if one leaks.
 
 ## Source of truth
 

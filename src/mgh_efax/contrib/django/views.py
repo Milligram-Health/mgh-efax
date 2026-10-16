@@ -8,6 +8,7 @@ in a worker afterwards: eFax wants an answer within 10 s and retries only on 5xx
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 
@@ -19,7 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from ...errors import WebhookSignatureError
 from ...webhook import parse_notification, verify_signature
-from . import efax_settings, services
+from . import efax_settings, services, webhook_secret_resolver
 from .models import OutboundFax
 
 log = logging.getLogger("mgh_efax")
@@ -31,11 +32,28 @@ class InboundWebhookView(View):
 
     def post(self, request: HttpRequest):
         conf = efax_settings()
+        secret = conf.get("WEBHOOK_SECRET", "")
+        resolver = webhook_secret_resolver()
+        if resolver is not None:
+            # One secret per account: the payload is parsed ONLY to choose whose secret to
+            # check. Nothing in it is acted on until the HMAC over the raw body verifies.
+            try:
+                payload = json.loads(request.body)
+            except ValueError:
+                log.warning("efax webhook rejected: unparseable body")
+                return HttpResponseForbidden()
+            if not isinstance(payload, dict):
+                return HttpResponseForbidden()
+            try:
+                secret = resolver(payload) or ""
+            except Exception as exc:
+                log.warning("efax webhook rejected: secret lookup failed (%s)", type(exc).__name__)
+                return HttpResponseForbidden()
         try:
             verify_signature(
                 request.body,
                 request.headers.get(conf.get("WEBHOOK_SIGNATURE_HEADER", "X-HMAC-Signature")),
-                conf.get("WEBHOOK_SECRET", ""),
+                secret,
                 algorithm=conf.get("WEBHOOK_ALGORITHM", "sha256"),
                 encoding=conf.get("WEBHOOK_ENCODING", "hex"),
             )

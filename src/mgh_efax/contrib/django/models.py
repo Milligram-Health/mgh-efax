@@ -56,6 +56,9 @@ class OutboundFax(models.Model):
     source_id = models.CharField(max_length=64, blank=True)
     source = GenericForeignKey("source_type", "source_id")
     tag = models.CharField(max_length=64, blank=True, db_index=True)  # e.g. "referrals.letter"
+    # Which eFax account sends it, when the app runs one account per tenant. Opaque to the
+    # package: only the app's ACCOUNT_RESOLVER reads it. Blank = the project's one account.
+    account_key = models.CharField(max_length=64, blank=True, db_index=True)
     metadata = models.JSONField(default=dict, blank=True)
 
     # Where it goes and how it looks.
@@ -123,6 +126,8 @@ class InboundFax(models.Model):
     from_number = models.CharField(max_length=20, blank=True)
     to_number = models.CharField(max_length=20, blank=True, db_index=True)
     user_id = models.CharField(max_length=64, blank=True)
+    # eFax App ID the fax arrived on (from the notification): which account it belongs to.
+    app_id = models.CharField(max_length=64, blank=True, db_index=True)
     page_count = models.PositiveIntegerField(null=True, blank=True)
     image = models.FileField(
         storage=fax_storage, upload_to=_inbound_path, max_length=255, blank=True

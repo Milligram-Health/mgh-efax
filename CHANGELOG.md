@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 — 2026-10-16
+- One eFax account per tenant, through two optional hooks; with neither set, behaviour is unchanged.
+  - `EFAX["ACCOUNT_RESOLVER"]`: `(row, purpose) -> EFaxClient | None`, used by submit ("send"),
+    refresh/reconcile ("track") and process_inbound ("inbound"). None on send ends the row
+    `suppressed` (a tenant kill switch that also holds queued faxes); on track the row is left
+    alone; on inbound the fax stays in the retry path. APP_ID/API_KEY/USER_ID not required.
+  - `EFAX["WEBHOOK_SECRET_RESOLVER"]`: `(payload) -> str`, for per-account webhook secrets; the
+    HMAC over the raw body is verified with that secret before anything else happens.
+  - POLL_INBOUND together with ACCOUNT_RESOLVER raises ImproperlyConfigured.
+- `send_fax(..., account_key=)` and `OutboundFax.account_key`; `InboundFax.app_id` recorded from
+  notifications. Migration 0003.
+
 ## 0.2.0 — 2026-10-16
 - `EFAX["SENDING_ENABLED"]`: when False, `submit()` dials nothing and the row ends in the new final
   state `suppressed` (fires `outbound_fax_finished`).

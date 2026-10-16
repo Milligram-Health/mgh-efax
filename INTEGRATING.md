@@ -14,7 +14,9 @@ record it in the "Decisions" table at the end, and carry on with what doesn't de
 - **The app's own eFax account only.** Whoever owns the app signs with eFax directly (agreement + BAA).
   Never reuse another organisation's eFax credentials, and never share yours with another app.
 - **Credentials live in the app's own secret store** (env vars / Secrets Manager in the app's own AWS account).
-  Never commit them, log them or paste them into tickets.
+  For **one eFax account per tenant**, they can instead be stored in the app's own database, encrypted at rest
+  field by field, and returned by `ACCOUNT_RESOLVER` (README, "One account per tenant"). Either way they are
+  never committed, logged, pasted into tickets or shown back in any UI.
 - **Fax documents and images are PHI.** They go only to the storage alias in `EFAX["STORAGE"]`, which must be
   private and encrypted. Don't log fax contents. Don't log full fax numbers; the package's `mask_number()`
   keeps the last four digits.
@@ -44,7 +46,7 @@ If any box fails, **⛔ STOP** and report which one before going further.
 The repo is public, so the build needs no credentials. Add a pinned tag to the app's requirements:
 
 ```
-mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.2.0
+mgh-efax[django,celery] @ git+https://github.com/Milligram-Health/mgh-efax@v0.3.0
 ```
 
 (Drop `celery` from the extras if the app has no Celery.) If the build can't reach GitHub at all, vendor the
