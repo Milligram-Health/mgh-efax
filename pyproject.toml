@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mgh-efax"
+version = "0.1.0"
+description = "Client for the eFax Enterprise API, plus a drop-in Django fax outbox and inbox"
+readme = "README.md"
+requires-python = ">=3.10"
+# Django layer needs 4.2+ (STORAGES / storages registry).
+license = { file = "LICENSE" }
+
+# No runtime dependencies on purpose (same stance as mgh-creds): the client is stdlib urllib, so it
+# installs into any Django app or a Lambda without touching their pins.
+dependencies = []
+
+[project.optional-dependencies]
+django = ["django>=4.2"]
+celery = ["celery>=5.3"]
+dev = ["pytest>=8.0", "ruff", "django>=4.2", "celery>=5.3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
