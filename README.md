@@ -129,7 +129,7 @@ A typical non-production setup is `REDIRECT_TO = env("EFAX_TEST_FAX_NUMBER")` an
 ## One account per tenant (optional)
 
 An app that hosts several organisations can give each one its **own** eFax account, with its own App ID, API key,
-numbers and, if eFax issues them per account, webhook secret. eFax supports this with sub-groups: each group gets
+numbers and, optionally, its own webhook secret. eFax supports this with sub-groups: each group gets
 an App ID and key scoped to that group's numbers only. Two optional hooks let the app supply the account per row.
 With neither hook set, behaviour is exactly as before.
 
@@ -157,7 +157,9 @@ send_fax(to=..., document=pdf, source=referral, account_key=str(org.pk))   # whi
 **`WEBHOOK_SECRET_RESOLVER(payload)`** returns the secret for the account that sent the notification, usually looked up from `payload["app_id"]`.
 - The body is parsed only to choose the secret, and nothing in it is acted on until the HMAC over the raw body verifies with that secret.
 - An unparseable body, an unknown account or an empty secret all get a 403.
-- If eFax gives every group the same secret, skip this hook and set `WEBHOOK_SECRET` as usual.
+- eFax sets the HMAC secret **per webhook URL**, and we choose its value. The simplest setup points every sub-group at
+  the same URL with the same secret: keep that one secret in the deployment's secret store as `WEBHOOK_SECRET`
+  and skip this hook. Use this hook only if you deliberately give each group its own secret.
 
 **Storing per-tenant credentials in the app's database** is reasonable when:
 - the API key and webhook secret are encrypted field by field with the app's existing encryption;
